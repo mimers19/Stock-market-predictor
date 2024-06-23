@@ -44,4 +44,4 @@ rmse = evaluator.evaluate(predictions)
 print(f"RMSE: {rmse}")
 
 # Zapisanie modelu
-model.save('s3://stock-data/model/stock_prediction_model')
+model.save('s3://my-stock-data-pg-69-2137/stock_prediction_model')
