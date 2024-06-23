@@ -10,7 +10,7 @@ from pyspark.ml.regression import RandomForestRegressionModel
 spark = SparkSession.builder.appName('StockForecasting').getOrCreate()
 
 # Ścieżka do pliku CSV z danymi historycznymi
-data_path = 's3://your-bucket/stock_data/your_stock_data.csv'
+data_path = 's3://stock_data/stock_data/your_stock_data.csv'
 
 # Ładowanie danych
 df = spark.read.csv(data_path, header=True, inferSchema=True)
@@ -24,7 +24,7 @@ assembler = VectorAssembler(inputCols=['Open', 'High', 'Low', 'Close', 'Volume',
 data = assembler.transform(df)
 
 # Wczytanie wytrenowanego modelu
-model = RandomForestRegressionModel.load('s3://your-bucket/model/stock_prediction_model')
+model = RandomForestRegressionModel.load('s3://stock-data/model/stock_prediction_model')
 
 # Generowanie predykcji dla przyszłych dni
 def generate_predictions(df, model, days):
@@ -50,5 +50,5 @@ predictions = generate_predictions(df, model, days_to_predict)
 preds_df = pd.DataFrame(predictions)
 
 # Zapisywanie predykcji do pliku CSV
-output_csv_path = 's3://your-bucket/output/predictions.csv'
+output_csv_path = 's3://stock-data/output/predictions.csv'
 preds_df.to_csv(output_csv_path, index=False)

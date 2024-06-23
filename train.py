@@ -11,7 +11,7 @@ from pyspark.ml.evaluation import RegressionEvaluator
 spark = SparkSession.builder.appName('StockPrediction').getOrCreate()
 
 # Ścieżka do folderu z plikami CSV
-data_folder = 's3://your-bucket/stock_data/'
+data_folder = 's3://my-stock-data-pg-69-2137/'
 
 # Funkcja do ładowania i przetwarzania danych z plików CSV
 def load_and_process_data(file_path):
@@ -44,4 +44,4 @@ rmse = evaluator.evaluate(predictions)
 print(f"RMSE: {rmse}")
 
 # Zapisanie modelu
-model.save('s3://your-bucket/model/stock_prediction_model')
+model.save('s3://stock-data/model/stock_prediction_model')
