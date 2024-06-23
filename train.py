@@ -49,4 +49,7 @@ rmse = evaluator.evaluate(predictions)
 print(f"RMSE: {rmse}")
 
 # Zapisanie modelu
-model.save('s3://my-stock-data-pg-69-2137/stock_prediction_model')
+model_path = "output/stock_gbt_model"
+model.write().overwrite().save(model_path)
+
+spark.stop()
