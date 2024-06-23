@@ -4,21 +4,17 @@ from pyspark.sql.window import Window
 from pyspark.ml.feature import VectorAssembler
 from pyspark.ml.regression import RandomForestRegressor
 from pyspark.ml.evaluation import RegressionEvaluator
-import boto3
 from functools import reduce
+import os
 
 # Inicjalizacja sesji Spark
 spark = SparkSession.builder.appName('StockPrediction').getOrCreate()
 
-# Nazwa bucketu S3
-bucket_name = 'my-stock-data-pg-69-2137'
+# Ścieżka do folderu z plikami CSV na lokalnym komputerze
+folder_path = 'stock_data'
 
-# Używanie boto3 do uzyskania listy plików w S3
-s3 = boto3.client('s3')
-response = s3.list_objects_v2(Bucket=bucket_name)
-
-# Pobranie wszystkich plików CSV z bucketu
-all_files = [f"s3://{bucket_name}/{item['Key']}" for item in response.get('Contents', []) if item['Key'].endswith('.csv')]
+# Pobranie wszystkich plików CSV z folderu
+all_files = [os.path.join(folder_path, f) for f in os.listdir(folder_path) if f.endswith('.csv')]
 
 # Funkcja do ładowania i przetwarzania danych z plików CSV
 def load_and_process_data(file_path):
@@ -50,7 +46,6 @@ rmse = evaluator.evaluate(predictions)
 print(f"RMSE: {rmse}")
 
 # Zapisanie modelu
-model_path = "output/stock_rf_model"
-model.write().overwrite().save(model_path)
+model.save("model")
 
 spark.stop()
