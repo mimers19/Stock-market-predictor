@@ -4,7 +4,7 @@ from pyspark.sql.functions import col, lag
 from pyspark.sql.window import Window
 from pyspark.ml.feature import VectorAssembler
 from pyspark.ml.regression import RandomForestRegressionModel
-import matplotlib.pyplot as plt
+
 
 # Inicjalizacja sesji Spark
 spark = SparkSession.builder.appName('StockForecasting').getOrCreate()
