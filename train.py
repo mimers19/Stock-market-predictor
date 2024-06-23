@@ -5,6 +5,7 @@ from pyspark.ml.feature import VectorAssembler
 from pyspark.ml.regression import RandomForestRegressor
 from pyspark.ml.evaluation import RegressionEvaluator
 import boto3
+from functools import reduce
 
 # Inicjalizacja sesji Spark
 spark = SparkSession.builder.appName('StockPrediction').getOrCreate()
@@ -29,7 +30,7 @@ def load_and_process_data(file_path):
 
 # Ładowanie danych ze wszystkich plików CSV
 dataframes = [load_and_process_data(file) for file in all_files]
-data = dataframes[0].unionAll(*dataframes[1:])
+data = reduce(lambda df1, df2: df1.union(df2), dataframes)
 
 # Przygotowanie danych do modelu
 assembler = VectorAssembler(inputCols=['Open', 'High', 'Low', 'Close', 'Volume', 'Prev_Close'], outputCol='features')
@@ -49,7 +50,7 @@ rmse = evaluator.evaluate(predictions)
 print(f"RMSE: {rmse}")
 
 # Zapisanie modelu
-model_path = "output/stock_gbt_model"
+model_path = "output/stock_rf_model"
 model.write().overwrite().save(model_path)
 
 spark.stop()
