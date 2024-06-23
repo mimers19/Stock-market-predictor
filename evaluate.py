@@ -1,37 +1,54 @@
+import pandas as pd
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, unix_timestamp
+from pyspark.sql.functions import col, lag
+from pyspark.sql.window import Window
 from pyspark.ml.feature import VectorAssembler
-from pyspark.ml.regression import GBTRegressionModel
+from pyspark.ml.regression import RandomForestRegressionModel
+import matplotlib.pyplot as plt
 
-# 1. Przygotowanie środowiska PySpark
-spark = SparkSession.builder.appName("StockPredictionInference").getOrCreate()
+# Inicjalizacja sesji Spark
+spark = SparkSession.builder.appName('StockForecasting').getOrCreate()
 
-# 2. Wczytanie modelu
-model_path = "output/stock_gbt_model"
-model = GBTRegressionModel.load(model_path)
+# Ścieżka do pliku CSV z danymi historycznymi
+data_path = 's3://your-bucket/stock_data/your_stock_data.csv'
 
-# 3. Wczytanie nowych danych
-# Przyklad: wczytanie nowego pliku CSV z danymi
-new_data_path = "new_stock_data.csv"
-new_df = spark.read.option("header", "true").option("inferSchema", "true").csv(new_data_path)
+# Ładowanie danych
+df = spark.read.csv(data_path, header=True, inferSchema=True)
 
-# Przygotowanie nowych danych
-new_df = new_df.withColumn("Date", unix_timestamp(col("Date"), "yyyy-MM-dd").cast("timestamp"))
-new_df = new_df.select("Date", "Open", "High", "Low", "Close", "Volume")
+# Przygotowanie danych
+df = df.withColumn('Prev_Close', lag('Close', 1).over(Window.orderBy('Date')))
+df = df.dropna()
 
-# Zestaw cech (features)
-feature_cols = ["Open", "High", "Low", "Volume"]
-assembler = VectorAssembler(inputCols=feature_cols, outputCol="features")
-new_df = assembler.transform(new_df)
+# Inicjalizacja VectorAssembler
+assembler = VectorAssembler(inputCols=['Open', 'High', 'Low', 'Close', 'Volume', 'Prev_Close'], outputCol='features')
+data = assembler.transform(df)
 
-# Przewidywanie cen akcji
-predictions = model.transform(new_df)
+# Wczytanie wytrenowanego modelu
+model = RandomForestRegressionModel.load('s3://your-bucket/model/stock_prediction_model')
 
-# Wyświetlenie wyników
-predictions.select("Date", "prediction").show()
+# Generowanie predykcji dla przyszłych dni
+def generate_predictions(df, model, days):
+    predictions = []
+    for _ in range(days):
+        features = assembler.transform(df).select('features').tail(1)[0].features
+        prediction = model.predict(features)
+        last_row = df.tail(1)[0]
+        next_row = last_row.asDict().copy()
+        next_row['Date'] = pd.to_datetime(next_row['Date']) + pd.Timedelta(days=1)
+        next_row['Prev_Close'] = last_row['Close']
+        next_row['Close'] = prediction  # Predykcja dokładnej wartości
+        df = df.union(spark.createDataFrame([next_row]))
+        predictions.append(next_row)
+    return predictions
 
-# Zapisanie wyników do pliku CSV
-predictions.select("Date", "prediction").write.csv("output/predicted_stock_prices.csv", header=True)
+# Liczba dni do przewidzenia
+days_to_predict = 30  # Możesz zmienić tę wartość
 
-# Zakończenie
-spark.stop()
+predictions = generate_predictions(df, model, days_to_predict)
+
+# Konwersja predykcji do Pandas DataFrame
+preds_df = pd.DataFrame(predictions)
+
+# Zapisywanie predykcji do pliku CSV
+output_csv_path = 's3://your-bucket/output/predictions.csv'
+preds_df.to_csv(output_csv_path, index=False)
