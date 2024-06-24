@@ -8,6 +8,8 @@ from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, mean, last, first, when
 from pyspark.sql.window import Window
 from pyspark.sql import functions as F
+import boto3
+import io
 
 # Initialize Spark session
 spark = SparkSession.builder \
@@ -108,5 +110,17 @@ test_score = np.sqrt(np.mean((test_predict - testY[:test_predict.shape[0]]) ** 2
 print(f'Train Score: {train_score:.2f} RMSE')
 print(f'Test Score: {test_score:.2f} RMSE')
 
-# Save the model
-model.save('stock_prediction_model.h5')
+# Save the model directly to S3
+s3 = boto3.client('s3')
+bucket_name = 'my-stock-data-pg-69-2137'
+model_file = 'stock_prediction_model.h5'
+
+# Save model to in-memory file
+model_buffer = io.BytesIO()
+model.save(model_buffer, save_format='h5')
+model_buffer.seek(0)
+
+# Upload model to S3
+s3.upload_fileobj(model_buffer, bucket_name, model_file)
+
+print(f'Model saved to S3 bucket {bucket_name} as {model_file}')
