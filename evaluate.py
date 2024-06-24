@@ -1,70 +1,82 @@
 import pandas as pd
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, lag
-from pyspark.sql.window import Window
-from pyspark.ml.feature import VectorAssembler
-from pyspark.ml.regression import RandomForestRegressionModel
-from datetime import timedelta
+import numpy as np
+import tensorflow as tf
+from tensorflow.keras.models import load_model
+from sklearn.preprocessing import MinMaxScaler
+from pandas.tseries.offsets import BDay
+import datetime
 
-# Inicjalizacja sesji Spark
-spark = SparkSession.builder.appName('StockForecasting').getOrCreate()
+# Wczytanie modelu
+model = load_model('stock_prediction_model.h5')
 
-# Ścieżka do pliku CSV z danymi historycznymi
-data_path = 'your_stock_data.csv'
-
-# Ładowanie danych
-df = spark.read.csv(data_path, header=True, inferSchema=True)
-
-# Przygotowanie danych
-df = df.withColumn('Prev_Close', lag('Close', 1).over(Window.orderBy('Date')))
-df = df.dropna()
-
-# Inicjalizacja VectorAssembler
-assembler = VectorAssembler(inputCols=['Open', 'High', 'Low', 'Close', 'Volume', 'Prev_Close'], outputCol='features')
-data = assembler.transform(df)
-
-# Wczytanie wytrenowanego modelu
-model = RandomForestRegressionModel.load('model/output')
-
-# Funkcja do generowania predykcji dla przyszłych dni
-def generate_predictions(df, model, days):
-    predictions = []
+# Funkcja do wczytania i przygotowania danych
+def prepare_data(file_path, look_back=10):
+    df = pd.read_csv(file_path, index_col=None, header=0)
     
-    schema = df.schema
+    # Normalizacja danych
+    scaler = MinMaxScaler()
+    scaled_data = scaler.fit_transform(df[['Close']])
+    df['Scaled_Close'] = scaled_data
+
+    data = df['Scaled_Close'].values.reshape(-1, 1)
+    return data, scaler, df
+
+# Funkcja do tworzenia datasetu
+def create_dataset(dataset, look_back=1):
+    dataX = []
+    for i in range(len(dataset) - look_back):
+        a = dataset[i:(i + look_back), 0]
+        dataX.append(a)
+    return np.array(dataX)
+
+# Funkcja do generowania prognozy na zadana liczbe dni
+def generate_forecast(model, data, scaler, look_back=10, days=30):
+    forecast = []
+    input_seq = data[-look_back:]  # Weź ostatnie look_back dni jako dane wejściowe
+    
     for _ in range(days):
-        features = assembler.transform(df).select('features').tail(1)[0].features
-        prediction = model.predict(features)
-        last_row = df.tail(1)[0]
-        next_row = last_row.asDict().copy()
+        input_seq = input_seq.reshape((1, look_back, 1))
+        next_value = model.predict(input_seq)
+        forecast.append(next_value[0, 0])
         
-        # Aktualizacja wartości cech na podstawie przewidywań
-        next_row['Open'] = float(next_row['Close'])  # Możesz dodać bardziej zaawansowaną logikę
-        next_row['High'] = float(next_row['Close']) * 1.01  # Przykładowa logika dla High
-        next_row['Low'] = float(next_row['Close']) * 0.99  # Przykładowa logika dla Low
-        next_row['Volume'] = int(next_row['Volume'])  # Możesz dodać bardziej zaawansowaną logikę
-        next_row['Prev_Close'] = float(last_row['Close'])
-        next_row['Close'] = prediction  # Predykcja dokładnej wartości
-        
-        # Ustawienie nowej daty jako obiekt datetime
-        next_row['Date'] = last_row['Date'] + timedelta(days=1)
-        
-        # Tworzenie DataFrame z nowym wierszem i wymuszenie zgodności schematu
-        new_row_df = spark.createDataFrame([next_row], schema=schema)
-        df = df.union(new_row_df)
-        predictions.append(next_row)
-        
-    return predictions
+        # Zaktualizuj dane wejściowe
+        input_seq = np.append(input_seq[:, 1:, :], [[[next_value[0, 0]]]], axis=1)
 
-# Liczba dni do przewidzenia
-days_to_predict = 10  # Możesz zmienić tę wartość
+    # Odwróć skalowanie
+    forecast = scaler.inverse_transform(np.array(forecast).reshape(-1, 1))
+    return forecast
 
-predictions = generate_predictions(df, model, days_to_predict)
+# Funkcja do sprawdzenia, czy dzień jest dniem roboczym w USA
+def is_business_day(date):
+    us_holidays = [
+        '2024-01-01', '2024-01-15', '2024-02-19', '2024-04-02', '2024-05-28',
+        '2024-07-04', '2024-09-03', '2024-11-22', '2024-12-25'
+    ]
+    return np.is_busday(date.strftime('%Y-%m-%d')) and date.strftime('%Y-%m-%d') not in us_holidays
 
-# Konwersja predykcji do Pandas DataFrame
-preds_df = pd.DataFrame(predictions)
+# Funkcja do generowania przyszłych dni roboczych
+def generate_future_dates(start_date, num_days):
+    future_dates = []
+    current_date = start_date
+    while len(future_dates) < num_days:
+        current_date += BDay()
+        if is_business_day(current_date):
+            future_dates.append(current_date)
+    return future_dates
 
-# Zapisywanie predykcji do pliku CSV
-output_csv_path = 'output.csv'
-preds_df.to_csv(output_csv_path, index=False)
+# Wczytaj dane
+data, scaler, df = prepare_data('your_stock_data.csv')
 
-spark.stop()
+# Generuj prognozę na 30 dni
+forecast_days = 30
+forecast = generate_forecast(model, data, scaler, look_back=10, days=forecast_days)
+
+# Generuj przyszłe dni robocze
+start_date = df['Date'].iloc[-1]
+start_date = pd.to_datetime(start_date)
+future_dates = generate_future_dates(start_date, forecast_days)
+
+# Tworzenie DataFrame z prognozami
+forecast_df = pd.DataFrame({'Date': future_dates, 'Forecast_Close': forecast.flatten()})
+
+forecast_df.to_csv('stock_forecast.csv', index=False)
