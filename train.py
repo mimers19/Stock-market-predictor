@@ -5,7 +5,7 @@ from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense
 from sklearn.preprocessing import MinMaxScaler
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, mean
+from pyspark.sql.functions import col, mean, last, first, when
 from pyspark.sql.window import Window
 from pyspark.sql import functions as F
 
@@ -24,8 +24,15 @@ df = df.withColumn('Company', F.regexp_extract(F.input_file_name(), r'([^/]+)_',
 # Convert necessary columns to the correct data types
 df = df.withColumn('Close', col('Close').cast('double'))
 
-# Handle missing values
-df = df.fillna(method='ffill').fillna(method='bfill')
+# Handle missing values with forward and backward fill using window functions
+windowSpec = Window.partitionBy('Company').orderBy('Date').rowsBetween(Window.unboundedPreceding, 0)
+df = df.withColumn('Close_filled', last(col('Close'), ignorenulls=True).over(windowSpec))
+
+windowSpec2 = Window.partitionBy('Company').orderBy('Date').rowsBetween(0, Window.unboundedFollowing)
+df = df.withColumn('Close_filled', first(col('Close_filled'), ignorenulls=True).over(windowSpec2))
+
+# Drop the original 'Close' column and rename 'Close_filled' to 'Close'
+df = df.drop('Close').withColumnRenamed('Close_filled', 'Close')
 
 # Normalize the data
 scaler = MinMaxScaler()
