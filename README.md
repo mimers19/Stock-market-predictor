@@ -116,11 +116,19 @@ This CSV file contains historical stock data used for training and evaluation. I
     python main.py
     ```
 
-## License
-
-This project is licensed under the MIT License.
-
 ## Acknowledgments
 
 - The Yahoo Finance API for providing historical stock data.
 - TensorFlow and Keras for the machine learning framework.
+
+## Authors 
+- Michał Jankowski
+- Dominik Gołembowski
+- Mateusz Debis
+- Maksymlian Anzulewicz
+- Michał Wera
+- Bartosz Hermanowski
+- Adam Hinc
+- Patryk Kosmalski
+- Mateusz Gosciniecki
+- Jakub Ławicki
