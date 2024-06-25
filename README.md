@@ -225,12 +225,12 @@ The model uses the Adam optimizer and mean squared error as the loss function. A
 
 The GUI includes a dropdown list containing ninety different companies to choose from and two buttons that function as follows:
 
-**"Generuj wykres"** - After selecting a company from the list and pressing this button, the model predicts the stock values of the chosen company based on historical data. Once this operation is complete, charts of historical stock values and the values predicted by the model are displayed in a new window, allowing for an assessment of the model's prediction accuracy.
+***Generuj wykres*** - After selecting a company from the list and pressing this button, the model predicts the stock values of the chosen company based on historical data. Once this operation is complete, charts of historical stock values and the values predicted by the model are displayed in a new window, allowing for an assessment of the model's prediction accuracy.
 
 ![alt text](wykres.png)
 *Charts of historical and predicted values for the company ADBE.*
 
-**"Przewiduj"** - After selecting a company from the list and pressing this button, the model predicts the stock value for the day following the last day in the historical stock value database. After making the prediction, a pop-up window displays the predicted value along with the values of the five preceding days, providing context and ensuring the realism of the prediction result.
+***Przewiduj*** - After selecting a company from the list and pressing this button, the model predicts the stock value for the day following the last day in the historical stock value database. After making the prediction, a pop-up window displays the predicted value along with the values of the five preceding days, providing context and ensuring the realism of the prediction result.
 
 ![alt text](przewiduj.png)
 *Window with the predicted stock value for the next day for the company ADBE.*
