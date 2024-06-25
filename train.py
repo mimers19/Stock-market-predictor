@@ -1,126 +1,112 @@
 import pandas as pd
 import numpy as np
 import tensorflow as tf
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import LSTM, Dense
+from tensorflow.keras.models import Sequential, load_model
+from tensorflow.keras.layers import LSTM, Dense, Dropout
+import matplotlib.pyplot as plt
 from sklearn.preprocessing import MinMaxScaler
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, mean, last, first, when
-from pyspark.sql.window import Window
-from pyspark.sql import functions as F
 import boto3
 import io
 
-# Initialize Spark session
+# Initialize Spark Session
 spark = SparkSession.builder \
     .appName("StockPricePrediction") \
     .getOrCreate()
 
-# Read CSV files from S3 bucket
-s3_bucket_path = "s3://my-stock-data-pg-69-2137/*.csv"
-df = spark.read.option("header", "true").csv(s3_bucket_path)
+# AWS S3 Configuration
+s3_bucket = 'my-stock-data-pg-69-2137'
+s3_path = 'stock_data/TSLA_stock_data.csv'
+model_save_path = 's3://your-s3-bucket-name/models/updated_model.keras'
 
-# Extract company code from filename
-df = df.withColumn('Company', F.regexp_extract(F.input_file_name(), r'([^/]+)_', 1))
 
-# Convert necessary columns to the correct data types
-df = df.withColumn('Close', col('Close').cast('double'))
 
-# Handle missing values with forward and backward fill using window functions
-windowSpec = Window.partitionBy('Company').orderBy('Date').rowsBetween(Window.unboundedPreceding, 0)
-df = df.withColumn('Close_filled', last(col('Close'), ignorenulls=True).over(windowSpec))
+# Initialize S3 client
+s3_client = boto3.client('s3')
+def load_data_from_s3(bucket, path):
+    response = s3_client.get_object(Bucket=bucket, Key=path)
+    status = response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+    if status == 200:
+        print(f"Successfully fetched data from {bucket}/{path}")
+        return pd.read_csv(io.BytesIO(response['Body'].read()), index_col=None, header=0)
+    else:
+        print(f"Failed to fetch data from {bucket}/{path}")
+        return None
 
-windowSpec2 = Window.partitionBy('Company').orderBy('Date').rowsBetween(0, Window.unboundedFollowing)
-df = df.withColumn('Close_filled', first(col('Close_filled'), ignorenulls=True).over(windowSpec2))
+def train_model():
+    df = load_data_from_s3(s3_bucket, s3_path)
+    
+    if df is None:
+        return None, None, None
 
-# Drop the original 'Close' column and rename 'Close_filled' to 'Close'
-df = df.drop('Close').withColumnRenamed('Close_filled', 'Close')
+    scaler = MinMaxScaler(feature_range=(0, 1))
+    stock_data = scaler.fit_transform(df['Close'].values.reshape(-1, 1))
 
-# Normalize the data
-scaler = MinMaxScaler()
-close_values = df.select('Close').collect()
-close_values = np.array([row['Close'] for row in close_values]).reshape(-1, 1)
-scaled_close = scaler.fit_transform(close_values)
-df = df.withColumn('Scaled_Close', F.array(*[F.lit(float(x)) for x in scaled_close]))
+    look_back = 100
+    x_train = []
+    y_train = []
+    x_test = []
+    y_test = []
 
-# Calculate moving average
-windowSpec = Window.orderBy("Date").rowsBetween(-9, 0)
-df = df.withColumn('MA_10', mean(col('Close')).over(windowSpec))
+    for i in range(look_back, len(stock_data)):
+        if i < 0.8 * len(stock_data):
+            x_train.append(stock_data[i - look_back:i])
+            y_train.append(stock_data[i])
+        else:
+            x_test.append(stock_data[i - look_back:i])
+            y_test.append(stock_data[i])
 
-# Convert Spark DataFrame to Pandas DataFrame for compatibility with TensorFlow
-pandas_df = df.toPandas().dropna()
+    x_train, y_train = np.array(x_train), np.array(y_train)
+    x_test, y_test = np.array(x_test), np.array(y_test)
 
-# Split the data
-train_size = int(len(pandas_df) * 0.8)
-train, test = pandas_df[:train_size], pandas_df[train_size:]
+    model = Sequential()
+    model.add(LSTM(100, return_sequences=True, input_shape=(x_train.shape[1], 1)))
+    model.add(Dropout(0.2))
+    model.add(LSTM(50, return_sequences=True))
+    model.add(Dropout(0.2))
+    model.add(LSTM(50, return_sequences=True))
+    model.add(Dropout(0.3))
+    model.add(LSTM(50, return_sequences=False))
+    model.add(Dropout(0.3))
+    model.add(Dense(1))
 
-# Prepare the data for LSTM
-def create_dataset(dataset, look_back=1):
-    dataX, dataY = [], []
-    for i in range(len(dataset) - look_back - 1):
-        a = dataset[i:(i + look_back), 0]
-        dataX.append(a)
-        dataY.append(dataset[i + look_back, 0])
-    return np.array(dataX), np.array(dataY)
+    model.compile(optimizer='adam', loss='mean_squared_error')
+    model.fit(x_train, y_train, batch_size=32, epochs=50)
 
-look_back = 10
-trainX, trainY = create_dataset(train['Scaled_Close'].values.reshape(-1, 1), look_back)
-testX, testY = create_dataset(test['Scaled_Close'].values.reshape(-1, 1), look_back)
+    # Save model to S3
+    with open('test_model.keras', 'wb') as model_file:
+        model.save(model_file)
+    s3_client.upload_file('test_model.keras', s3_bucket, 'models/test_model.keras')
+    print("Model trained and saved to S3 as test_model.keras")
+    
+    return x_test, y_test, scaler
 
-# Reshape input to be [samples, time steps, features]
-trainX = np.reshape(trainX, (trainX.shape[0], look_back, 1))
-testX = np.reshape(testX, (testX.shape[0], look_back, 1))
+def test_model(x_test, y_test, scaler):
+    # Load model from S3
+    with open('test_model.keras', 'wb') as model_file:
+        s3_client.download_fileobj(s3_bucket, 'models/test_model.keras', model_file)
+    
+    model = load_model('test_model.keras')
 
-print(f"trainX shape: {trainX.shape}")
-print(f"trainY shape: {trainY.shape}")
-print(f"testX shape: {testX.shape}")
-print(f"testY shape: {testY.shape}")
+    predictions = []
+    for i in range(len(y_test)):
+        predicted_value = model.predict(x_test[i].reshape(1, x_test[i].shape[0], x_test[i].shape[1]))
+        predictions.append(predicted_value[0, 0])
 
-# Create and fit the LSTM network
-model = Sequential()
-model.add(LSTM(50, return_sequences=True, input_shape=(look_back, 1)))
-model.add(LSTM(50))
-model.add(Dense(1))
-model.compile(loss='mean_squared_error', optimizer='adam')
-model.fit(trainX, trainY, epochs=20, batch_size=1, verbose=2)
+    predictions = scaler.inverse_transform(np.array(predictions).reshape(-1, 1))
+    y_test = scaler.inverse_transform(y_test)
 
-# Evaluate the model
-train_predict = model.predict(trainX)
-test_predict = model.predict(testX)
+    # Plotting the results
+    plt.figure(figsize=(14, 5))
+    plt.plot(y_test, color='blue', label='Actual Stock Price')
+    plt.plot(predictions, color='red', label='Predicted Stock Price')
+    plt.title('Stock Price Prediction')
+    plt.xlabel('Time')
+    plt.ylabel('Stock Price')
+    plt.legend()
+    plt.show()
 
-# Reshape predictions to 2D for inverse transform
-train_predict = train_predict.reshape(-1, 1)
-test_predict = test_predict.reshape(-1, 1)
-
-# Invert predictions
-train_predict = scaler.inverse_transform(train_predict)
-trainY = scaler.inverse_transform(trainY.reshape(-1, 1))
-test_predict = scaler.inverse_transform(test_predict)
-testY = scaler.inverse_transform(testY.reshape(-1, 1))
-
-print(f"train_predict shape: {train_predict.shape}")
-print(f"trainY shape: {trainY.shape}")
-print(f"test_predict shape: {test_predict.shape}")
-print(f"testY shape: {testY.shape}")
-
-# Calculate root mean squared error
-train_score = np.sqrt(np.mean((train_predict - trainY[:train_predict.shape[0]]) ** 2))
-test_score = np.sqrt(np.mean((test_predict - testY[:test_predict.shape[0]]) ** 2))
-
-print(f'Train Score: {train_score:.2f} RMSE')
-print(f'Test Score: {test_score:.2f} RMSE')
-
-# Save the model directly to S3
-s3 = boto3.client('s3')
-bucket_name = 'my-stock-data-pg-69-2137'
-model_file = 'stock_prediction_model.h5'
-
-# Save model to in-memory file
-model_buffer = io.BytesIO()
-model.save(model_buffer, save_format='h5')
-model_buffer.seek(0)
-
-# Upload model to S3
-s3.upload_fileobj(model_buffer, bucket_name, model_file)
-
-print(f'Model saved to S3 bucket {bucket_name} as {model_file}')
+if __name__ == "__main__":
+    x_test, y_test, scaler = train_model()
+    if x_test is not None and y_test is not None:
+        test_model(x_test, y_test, scaler)
