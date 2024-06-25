@@ -1,6 +1,31 @@
+
 # Stock Price Prediction Project
 
-This project aims to predict future stock prices using historical stock data and a Long Short-Term Memory (LSTM) neural network. The project is divided into several components, each responsible for a different part of the workflow.
+
+## Project Overview
+
+This project aims to predict future stock prices using historical stock data and a Long Short-Term Memory (LSTM) neural network. The main objective is to provide a reliable model that can forecast stock prices, helping investors make informed decisions based on predicted market trends.
+
+The project encompasses data retrieval, preprocessing, model training, and evaluation. Historical stock data is collected using the Yahoo Finance API, which is then processed and used to train an LSTM model. The trained model is capable of predicting future stock prices based on the historical patterns it has learned.
+
+### AWS Integration
+
+To leverage scalable and high-performance computing resources, the model training process was carried out using AWS (Amazon Web Services). AWS provides a suite of cloud services that are ideal for running machine learning workloads, ensuring efficient and fast model training.
+
+Using AWS, the project benefits from:
+- Scalable computing power that adjusts based on the training workload.
+- Robust storage solutions for handling large datasets and model files.
+- Enhanced security features ensuring the safe handling of data and model artifacts.
+## Technologies Used
+
+- Python
+- TensorFlow
+- Keras
+- Pandas
+- NumPy
+- Scikit-learn
+- Yahoo Finance API
+- AWS (Amazon Web Services)
 
 ## Project Structure
 
@@ -91,16 +116,6 @@ This CSV file contains historical stock data used for training and evaluation. I
     python main.py
     ```
 
-## Technologies Used
-
-- Python
-- TensorFlow
-- Keras
-- Pandas
-- NumPy
-- Scikit-learn
-- Yahoo Finance API
-
 ## License
 
 This project is licensed under the MIT License.
@@ -109,4 +124,3 @@ This project is licensed under the MIT License.
 
 - The Yahoo Finance API for providing historical stock data.
 - TensorFlow and Keras for the machine learning framework.
-
