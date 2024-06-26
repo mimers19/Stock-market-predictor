@@ -6,7 +6,7 @@
 
 This project aims to predict future stock prices using historical stock data and a Long Short-Term Memory (LSTM) neural network. The main objective is to provide a reliable model that can forecast stock prices, helping investors make informed decisions based on predicted market trends.
 
-The project encompasses data retrieval, preprocessing, model training, and evaluation. Historical stock data is collected using the Yahoo Finance API, which is then processed and used to train an LSTM model. The trained model is capable of predicting future stock prices based on the historical patterns it has learned.
+The project encompasses data retrieval, preprocessing, model training, and evaluation. Historical stock data is collected using yfinance, which is then processed and used to train an LSTM model. The trained model is capable of predicting future stock prices based on the historical patterns it has learned.
 
 ### AWS Integration
 
@@ -25,7 +25,7 @@ Using AWS, the project benefits from:
 - Pandas
 - NumPy
 - Scikit-learn
-- Yahoo Finance API
+- yfinance
 - AWS (Amazon Web Services)
 - PySpark
 - Apache Spark
